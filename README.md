@@ -1,4 +1,4 @@
-# Predicting shear-induced particle migration in channel flow with Physics-Informed Neural Networks
+# Learning hidden particle migration in concentrated particle suspension flow using Physics-Informed Neural Networks
 
 ## Some Results
 
