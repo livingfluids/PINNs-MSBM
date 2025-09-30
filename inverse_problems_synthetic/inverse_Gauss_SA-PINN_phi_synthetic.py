@@ -12,8 +12,20 @@ import pandas as pd
 # ----------------------------------------------------------------------------- 
 
 # Controls & Hyperparameters --------------------------------------------------
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(device)
+# Configuration option
+USE_GPU = False  # Set to True to try GPU, False for CPU
+
+if USE_GPU:
+    if torch.backends.mps.is_available():
+        device = torch.device("mps")
+    elif torch.cuda.is_available():
+        device = torch.device("cuda")
+    else:
+        device = torch.device("cpu")
+else:
+    device = torch.device("cpu")  # Force CPU
+
+print(f"Using device: {device}")
 torch.manual_seed(0)
 np.random.seed(0)
 

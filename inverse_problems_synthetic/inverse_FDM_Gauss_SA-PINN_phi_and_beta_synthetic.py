@@ -13,7 +13,18 @@ import pandas as pd
 # ----------------------------------------------------------------------------- 
 
 # Controls & Hyperparameters --------------------------------------------------
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# Device selection: MPS (Mac GPU) > CUDA (NVIDIA GPU) > CPU
+USE_GPU = True  # Set to False to force CPU usage
+
+if USE_GPU:
+    if torch.backends.mps.is_available():
+        device = torch.device("mps")
+    elif torch.cuda.is_available():
+        device = torch.device("cuda")
+    else:
+        device = torch.device("cpu")
+else:
+    device = torch.device("cpu")
 print(device)
 torch.manual_seed(0)
 np.random.seed(0)
@@ -123,7 +134,7 @@ class ModifiedGaussianExpansion(nn.Module):
 # 'Jagtap' activation function from Jagtap et al. improves convergence by an insignificant amount, so this isn't necessary
 class JagtapActivation(nn.Module):
     def __init__(self, neurons):
-        super().__init__()
+        super().__init__() 
         self.alpha = nn.Parameter(torch.randn(1, neurons))
         self.f = nn.Parameter(torch.randn(1, neurons))
         self.tanh = nn.Tanh()
@@ -265,7 +276,6 @@ def physics_loss():  # physics ensures ∇⋅J = ∇⋅Σ = 0
 
     # Fluid phase stress (Σᶠ)
     Σfstar = - pstar * I + 2 * Estar
-
     # Total stress (Σ)
     Σstar = Σpstar + Σfstar
 
@@ -451,15 +461,15 @@ for epoch in range(EPOCHS_ADAM):
 # LBFGS closure function
 def closure():
     ϕ_PINN_optimizer_LBFGS.zero_grad()
-    ℒ, ℒ_un, ℒ_individuals = total_loss()
+    ℒ, ℒ_un, ℒ_individuals = total_loss() 
     ℒ.backward()
     return ℒ
 
 # LBFGS training loop 
 for epoch in range(EPOCHS_LBFGS):
-    ϕ_PINN_optimizer_LBFGS.step(closure)
-    ℒ, ℒ_un, ℒ_individuals = total_loss()
-    loss_history.append(ℒ_un, ℒ_individuals)
+    ϕ_PINN_optimizer_LBFGS.step(closure) 
+    ℒ, ℒ_un, ℒ_individuals = total_loss() 
+    loss_history.append(ℒ_un, ℒ_individuals) 
     ϕ_PINN_scheduler_LBFGS.step(ℒ_un.item()) if use_scheduler else None
     β_scheduler.step(ℒ_un.item()) if use_scheduler else None
 
@@ -474,4 +484,4 @@ for epoch in range(EPOCHS_LBFGS):
 # Save ϕ model when finished
 ϕ_saved_path = save_path / ϕ_model_saved_name
 Path(save_path).mkdir(parents=True, exist_ok=True)
-torch.save(ϕ_PINN.state_dict(), ϕ_saved_path)
+torch.save(ϕ_PINN.state_dict(), ϕ_saved_path) 
