@@ -7,7 +7,7 @@ import pandas as pd
 import matplotlib.animation as animation
 
 # ----------------------------------------------------------------------------- 
-# SOLVES THE INVERSE PROBLEM FOR ϕ FOR SYNTHETIC DATA USING A GAUSS 
+# SOLVES THE INVERSE PROBLEM FOR ϕ FOR SYNTHETIC DATA USING A FOURIER 
 # EXPANSION LAYER
 # ----------------------------------------------------------------------------- 
 
