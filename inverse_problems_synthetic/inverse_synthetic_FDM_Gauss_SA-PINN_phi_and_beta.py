@@ -8,7 +8,7 @@ import matplotlib.animation as animation
 
 # ----------------------------------------------------------------------------- 
 # SOLVES THE INVERSE PROBLEM FOR ϕ AND β FOR SYNTHETIC DATA USING A GAUSS 
-# EXPANSION LAYER
+# EXPANSION LAYER AND THE FINITE DIFFERENCE METHOD WITHIN THE LOSS FUNCTIONS
 # ----------------------------------------------------------------------------- 
 
 # Controls & Hyperparameters --------------------------------------------------
