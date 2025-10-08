@@ -2,18 +2,18 @@ import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
 import numpy as np
-import matplotlib.animation as anim
 from pathlib import Path
 import pandas as pd
+import matplotlib.animation as animation
 
 # ----------------------------------------------------------------------------- 
-# SOLVES THE INVERSE PROBLEM FOR ϕ FOR SYNTHETIC DATA USING A FOURIER
+# SOLVES THE INVERSE PROBLEM FOR ϕ FOR SYNTHETIC DATA USING A GAUSS 
 # EXPANSION LAYER
 # ----------------------------------------------------------------------------- 
 
 # Controls & Hyperparameters --------------------------------------------------
-# Device selection: MPS (Mac GPU) > CUDA (NVIDIA GPU) > CPU
-USE_GPU = True  # Set to False to force CPU usage
+# Configuration option
+USE_GPU = False  # Set to True to try GPU, False for CPU
 
 if USE_GPU:
     if torch.backends.mps.is_available():
@@ -23,8 +23,9 @@ if USE_GPU:
     else:
         device = torch.device("cpu")
 else:
-    device = torch.device("cpu")
-print(device)
+    device = torch.device("cpu")  # Force CPU
+
+print(f"Using device: {device}")
 torch.manual_seed(0)
 np.random.seed(0)
 
@@ -32,6 +33,8 @@ np.random.seed(0)
 data_file_1 = True  # which example data file do you want to try? one or two? if one, one = True. if two, one = False
 save_images = False  # save images during training for making an animation later
 use_scheduler = True  # if True, the learning rates will decrease over time as the loss plateaus
+save_gif = True  # saves a .mp4 video file gif of the ϕ_PINN
+visualize_step = 50  # how many epochs before each visualization frame
 
 # Define the paths for data, save, and visualization
 base_path = Path(__file__).parent
@@ -43,6 +46,7 @@ visualization_path = base_path / "saved_visuals"
 Ux_model_saved_name = "synthetic_saved_Ux_model_example_1" if data_file_1 else "synthetic_saved_Ux_model_example_2"
 ϕ_model_saved_name = "synthetic_saved_phi_example_1" if data_file_1 else "synthetic_saved_phi_example_2"
 data_file_name = "synthetic_data_example_1.csv" if data_file_1 else "synthetic_data_example_2.csv"
+gif_name = 'inverse_synthetic_Fourier_SA-PINN_phi.mp4'
 
 # Load the data
 df = pd.read_csv(data_path / data_file_name)
@@ -51,9 +55,9 @@ df = pd.read_csv(data_path / data_file_name)
 Ux_NEURONS = 64
 ϕ_NEURONS = 64
 Ux_LAYERS = 3
-ϕ_LAYERS = 3
-ϕ_FOURIER_SCALE = 5.0
-EPOCHS_ADAM = 100
+ϕ_LAYERS = 1
+ϕ_FOURIER_SCALE = 5
+EPOCHS_ADAM = 1000
 EPOCHS_LBFGS = 200
 ϕ_LEARNING_RATE = 1e-3
 λ_LEARNING_RATE = 1e-6  # ideally no larger than the smallest λ_..._INIT value 
@@ -75,6 +79,7 @@ SCHEDULER_MIN_LR = 1e-6  # Minimum LR to stop reducing below this
 p = torch.tensor(df['p'].values.mean(), device=device, dtype=torch.float32)  # steady state pressure (Pa)
 Ux_max = torch.tensor(df['U_0'].values.max(), device=device, dtype=torch.float32)  # max steady state velocity (m/s)
 ϕ_average = torch.tensor(df['c'].values.mean(), device=device, dtype=torch.float32)  # average ϕ (dimensionless)
+ϕ_bulk = torch.tensor(0.15 if data_file_1 else 0.2, dtype=torch.float32, device=device)  # bulk ϕ
 H = torch.tensor(25e-6 if data_file_1 else 50e-6, device=device, dtype=torch.float32)  # channel height (m)
 ρ = torch.tensor(1190.0, device=device, dtype=torch.float32)  # solvent density (Kg/m³)
 η = torch.tensor(0.48, device=device, dtype=torch.float32)  # dynamic viscosity (Pa·s)
@@ -98,7 +103,7 @@ Ux_data = torch.tensor(df['U_0'].values, dtype=torch.float32, device=device).uns
 ϕ_data = torch.tensor(df['c'].values, dtype=torch.float32, device=device).unsqueeze(1)
 
 # Collocation points (uniform, non-random points required for self-adaptive weights)
-y_uniform = torch.linspace(-1.0, 1.0, COLLOCATION_PTS, device=device).unsqueeze(1).requires_grad_(True)
+y_uniform = torch.linspace(-1.0, 1.0, COLLOCATION_PTS + 2, device=device).unsqueeze(1).requires_grad_(True)[1:-1]
 
 # Trial functions
 Ux_trial = lambda y: Ux_PINN(torch.cat([y.to(device)], dim=1))[:,0:1] * (1 + y.to(device)) * (1 - y.to(device))  # torch.Size([y, 1]), normalized 
@@ -109,10 +114,12 @@ class LossHistory:
     def __init__(self):
         self.total = []
         self.individuals = []
+        self.individuals_un = []
 
-    def append(self, ℒ, ℒ_individuals):
+    def append(self, ℒ, ℒ_individuals, ℒ_individuals_un):
         self.total.append(ℒ.item())
         self.individuals.append([ℒ_individual.item() for ℒ_individual in ℒ_individuals])
+        self.individuals_un.append([ℒ_individual_un.item() for ℒ_individual_un in ℒ_individuals_un])
 
 # PINN ------------------------------------------------------------------------
 # Fourier features from Tancik et al. 
@@ -153,14 +160,7 @@ layers.append(nn.Linear(ϕ_NEURONS, 1))
 # Create the ϕ_PINN
 ϕ_PINN = nn.Sequential(*layers).to(device)
 
-# Global Weights (Will Better Utilize Later) ----------------------------------
-m_J = 1
-m_Σxy = 1
-m_Σyy = 1
-m_mass = 1
-m_symmetry = 1
-
-# Self-Adaptive Weights -------------------------------------------------------
+# Self-Adaptive Local Weights -------------------------------------------------
 # Self-Adaptive Weights from McClenny & Braga-Neto 
 mask = lambda λ: λ**2  # torch.nn.functional.softplus(λ) can also be tried
 
@@ -211,12 +211,13 @@ def physics_loss():  # physics ensures ∇⋅J = ∇⋅Σ = 0
     γ̇ = γ̇star * 2 * Ux_max / H  # dimensionalize for calculating it
     left_wall = 3 * η0 * γ̇ / (4 * torch.pi * ((H/2)*(ystar + 1) + a)**β) * frv
     right_wall = 3 * η0 * γ̇ / (4 * torch.pi * ((H/2)*(1 - ystar) + a)**β) * frv
-    scale_L = (H ** 2) / (2 * η0 * Ux_max)  # nondimensionalize after calculating it
+    scale_L = (H ** 2) / (2 * η0 * Ux_max)  # nondimensionalize after calculating it 
     L = torch.stack([
         torch.cat([zero], dim=1),
         torch.cat([scale_L * (left_wall - right_wall)], dim=1),
         torch.cat([zero], dim=1)
     ], dim=1)
+    L_visualize = torch.cat([(left_wall - right_wall)], dim=1).detach().cpu().numpy()[:, 0]
     
     # Diagonal tensor of the SBM (Q)
     Q = torch.tensor([[1.0, 0.0, 0.0], [0.0, λ2, 0.0], [0.0, 0.0, λ3]], device=device).repeat(ystar.shape[0], 1, 1)  # torch.Size([y, 3, 3]), a matrix for each y
@@ -260,14 +261,15 @@ def physics_loss():  # physics ensures ∇⋅J = ∇⋅Σ = 0
     dΣxystar_dystar = torch.autograd.grad(Σstar[:, 0, 1], ystar, torch.ones_like(Σstar[:, 0, 1]), create_graph=True)[0] - dpstar_dxstar
     dΣyystar_dystar = torch.autograd.grad(Σstar[:, 1, 1], ystar, torch.ones_like(Σstar[:, 1, 1]), create_graph=True)[0]
 
-    return Jstar_divergence, dΣxystar_dystar, dΣyystar_dystar
+    return Jstar_divergence, dΣxystar_dystar, dΣyystar_dystar, L_visualize
 
 def ϕ_bulk_loss():  # IC ensures mean(ϕ) never changes
     ystar = y_uniform   # already normalized
+    Uxstar = Ux_trial(ystar)  # already normalized 
     ϕ = ϕ_trial(ystar)
 
     # Mass conservation error calculation
-    ϕ_bulk_term = torch.mean(ϕ) - ϕ_average 
+    ϕ_bulk_term = torch.sum(ϕ * Uxstar) / torch.sum(Uxstar) - ϕ_bulk 
 
     return ϕ_bulk_term
 
@@ -280,16 +282,16 @@ def ϕ_symmetry_loss():  # ensures ϕ is symmetric along centerflow axis
     return ϕ_symmetry_term
 
 def total_loss():  # combining losses
-    Jstar_divergence, dΣxystar_dystar, dΣyystar_dystar = physics_loss()  # torch.Size([y, 1]) for each
+    Jstar_divergence, dΣxystar_dystar, dΣyystar_dystar, L_visualize = physics_loss()  # torch.Size([y, 1]) for each
     ϕ_bulk_term = ϕ_bulk_loss()  # torch.Size([1])
     ϕ_symmetry_term = ϕ_symmetry_loss()  # torch.Size([1])
 
     # Indivisual losses, in the style of McClenny & Braga-Neto, all become scalars
-    ℒ_J = m_J * torch.sum(mask(λ_J) * Jstar_divergence**2)
-    ℒ_Σxy = m_Σxy * torch.sum(mask(λ_Σxy) * dΣxystar_dystar**2)
-    ℒ_Σyy = m_Σyy * torch.sum(mask(λ_Σyy) * dΣyystar_dystar**2)
-    ℒ_mass = m_mass * torch.sum(mask(λ_mass) * ϕ_bulk_term**2)
-    ℒ_symmetry = m_symmetry * torch.sum(mask(λ_symmetry) * ϕ_symmetry_term**2)
+    ℒ_J = torch.mean(mask(λ_J) * Jstar_divergence**2)
+    ℒ_Σxy = torch.mean(mask(λ_Σxy) * dΣxystar_dystar**2)
+    ℒ_Σyy = torch.mean(mask(λ_Σyy) * dΣyystar_dystar**2)
+    ℒ_mass = torch.mean(mask(λ_mass) * ϕ_bulk_term**2)
+    ℒ_symmetry = torch.mean(mask(λ_symmetry) * ϕ_symmetry_term**2)
     # NOTE ℒ_mass does not need mean(...), as it is already scalars, but for the the sake of code consistiency, they are
 
     # loss function, in the style of McClenny & Braga-Neto
@@ -305,24 +307,27 @@ def total_loss():  # combining losses
     # Unweighted loss for visualization of loss decrease
     ℒ_un = ℒ_J_un + ℒ_Σxy_un + ℒ_Σyy_un + ℒ_mass_un + ℒ_symmetry_un
  
-    # Individual losses for tracking and eventual visualizatio for debugging
-    ℒ_individuals = [ℒ_J_un, ℒ_Σxy_un, ℒ_Σyy_un, ℒ_mass_un, ℒ_symmetry_un]
+    # Individual losses for tracking and eventual visualization for debugging
+    ℒ_individuals = [ℒ_J, ℒ_Σxy, ℒ_Σyy, ℒ_mass, ℒ_symmetry]
+    ℒ_individuals_un = [ℒ_J_un, ℒ_Σxy_un, ℒ_Σyy_un, ℒ_mass_un, ℒ_symmetry_un]
 
-    return ℒ, ℒ_un, ℒ_individuals
+    return ℒ, ℒ_un, ℒ_individuals, ℒ_individuals_un, L_visualize
 
 # Visualize -------------------------------------------------------------------
-def visualize(epoch):
+def visualize(epoch, L_visualize):
     with torch.no_grad():
         y_plot = torch.linspace(-1.0, 1.0, COLLOCATION_PTS, device=device).unsqueeze(1)
         y_plot_dim = ((y_plot + 1.0) / 2.0 * H).cpu().numpy()
         Ux_pinn = (Ux_trial(y_plot) * Ux_max).cpu().numpy()
         phi_pinn = ϕ_trial(y_plot).cpu().numpy()
 
-        fig, axs = plt.subplots(2, 2, figsize=(12, 8))
+        fig, axs = plt.subplots(2, 3, figsize=(12, 8))
         ax_ux = axs[0][0]
         ax_phi = axs[0][1]
         ax_total_loss = axs[1][1]
         ax_indiv_loss = axs[1][0]
+        ax_L = axs[0][2]
+        ax_indiv_un_loss = axs[1][2]
 
         # Ux
         ax_ux.plot(((y_data + 1)/2 * H).cpu(), (Ux_data * Ux_max).cpu(), 'ko', markersize=3, label='Data')
@@ -354,9 +359,33 @@ def visualize(epoch):
             for i, indiv_loss in enumerate(zip(*loss_history.individuals)):
                 ax_indiv_loss.semilogy(indiv_loss, label=f'Loss {component_names[i]}')
             ax_indiv_loss.set_xlabel('Epoch')
-            ax_indiv_loss.set_ylabel('Loss')
+            ax_indiv_loss.set_ylabel('Weighted Loss')
             ax_indiv_loss.legend()
             ax_indiv_loss.grid(True)
+
+        # Unweighted individual losses plot
+        if loss_history.individuals_un: # ∇⋅J = ∇⋅Σ
+            component_names = ["∇⋅J", "∇⋅Σ (xy)", "∇⋅Σ (yy)", "IC", "sym"]
+            for i, indiv_un_loss in enumerate(zip(*loss_history.individuals_un)):
+                ax_indiv_un_loss.semilogy(indiv_un_loss, label=f'Loss {component_names[i]}')
+            ax_indiv_un_loss.set_xlabel('Epoch')
+            ax_indiv_un_loss.set_ylabel('Unweighted Loss')
+            ax_indiv_un_loss.legend()
+            ax_indiv_un_loss.grid(True)
+
+        # Lift force plot
+        ax_L.plot(y_plot_dim, L_visualize, 'y-', label='Lift Force')
+        ax_L.set_xlabel('y [m]')
+        ax_L.set_ylabel('Lift Force')
+        ax_L.legend()
+        ax_L.grid(True)
+
+        # For animation
+        visualization_history.append({
+            'epoch': epoch,
+            'y_plot_dim': y_plot_dim,
+            'phi_pinn': phi_pinn
+        })
 
         plt.tight_layout()
         plt.show(block=False)
@@ -365,10 +394,38 @@ def visualize(epoch):
         plt.pause(0.1)
         plt.close(fig)
 
+def animate_mp4():
+    visualization_path.mkdir(parents=True, exist_ok=True)
+    fig, ax = plt.subplots(figsize=(6, 4))
+    ax.set_xlabel('y [m]')
+    ax.set_ylabel('phi')
+    ax.set_xlim(0, H.cpu().numpy())
+    ax.grid(True)
+    line_phi_data, = ax.plot(((y_data + 1)/2 * H).cpu(), ϕ_data.cpu(), 'ko', markersize=3, label='Data')
+    line_phi_pinn, = ax.plot([], [], 'r-', label='PINN')
+    ax.legend()
+    title = ax.set_title('')
+
+    def init():
+        line_phi_pinn.set_data([], [])
+        title.set_text('')
+        return [line_phi_pinn, title]
+    
+    def update(frame):
+        data = visualization_history[frame]
+        line_phi_pinn.set_data(data['y_plot_dim'], data['phi_pinn'])
+        title.set_text(f'Epoch {data["epoch"]}')
+
+        return [line_phi_pinn, title]
+    
+    anim = animation.FuncAnimation(fig, update, frames=len(visualization_history), init_func=init, blit=True, interval=100)
+    anim.save(visualization_path / gif_name, writer='ffmpeg', fps=10)
+    plt.close(fig)
+
 # Training Loop ---------------------------------------------------------------
 # Define parameters
-ϕ_PINN_parameters = list(ϕ_PINN.parameters()) + [dpstar_dxstar]  # PINN parameters (include all)
-λ_parameters = [λ_J, λ_Σxy, λ_Σyy, λ_mass, λ_symmetry]  # self-adaptive weights (include all)
+ϕ_PINN_parameters = list(ϕ_PINN.parameters()) + [dpstar_dxstar]  # PINN parameters
+λ_parameters = [λ_J, λ_Σxy, λ_Σyy, λ_mass, λ_symmetry]  # self-adaptive weights
 
 # Define optimizers
 ϕ_PINN_optimizer_Adam = torch.optim.Adam(ϕ_PINN_parameters, lr=ϕ_LEARNING_RATE)
@@ -380,8 +437,9 @@ def visualize(epoch):
 ϕ_PINN_scheduler_LBFGS = torch.optim.lr_scheduler.ReduceLROnPlateau(ϕ_PINN_optimizer_LBFGS, factor=SCHEDULER_FACTOR, patience=SCHEDULER_PATIENCE, min_lr=SCHEDULER_MIN_LR)
 λ_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(λ_optimizer, factor=SCHEDULER_FACTOR, patience=SCHEDULER_PATIENCE, min_lr=SCHEDULER_MIN_LR)
 
-# Call the loss history class
+# Call the loss history class and initialize the visualization history for animation
 loss_history = LossHistory()
+visualization_history = []
 
 # Load previously saved Ux model
 Ux_saved_path = save_path / Ux_model_saved_name
@@ -394,7 +452,7 @@ for epoch in range(EPOCHS_ADAM):
     λ_optimizer.zero_grad()
 
     # Forward & Backward passes
-    ℒ, ℒ_un, ℒ_individuals = total_loss()  # forward pass to compute loss
+    ℒ, ℒ_un, ℒ_individuals, ℒ_individuals_un, L_visualize = total_loss()  # forward pass to compute loss
     ℒ.backward()  # backward pass to compute gradients
 
     # Gradient descent & scheduler update
@@ -411,29 +469,29 @@ for epoch in range(EPOCHS_ADAM):
     λ_scheduler.step(ℒ_un.item()) if use_scheduler else None
 
     # Update loss history for plotting
-    loss_history.append(ℒ_un, ℒ_individuals)
+    loss_history.append(ℒ_un, ℒ_individuals, ℒ_individuals_un)
 
     # Visuals
     if use_scheduler:
-        print(f"Epoch: {epoch} | Loss: {ℒ_un.item()} | Individual Losses: {[f'{l.item():.5f}' for l in ℒ_individuals]} | ϕ Lr: {ϕ_PINN_scheduler_LBFGS.get_last_lr()} | λ Lr: {λ_scheduler.get_last_lr()}")
+        print(f"Epoch: {epoch} | Loss: {ℒ_un.item()} | Individual Losses: {[f'{l.item():.5f}' for l in ℒ_individuals]} | ϕ Lr: {ϕ_PINN_scheduler_Adam.get_last_lr()} | λ Lr: {λ_scheduler.get_last_lr()}")
     else:
         print(f"Epoch: {epoch} | Loss: {ℒ_un.item()} | Individual Losses: {[f'{l.item():.5f}' for l in ℒ_individuals]}")
     print("Normalized and non-normalized pressure gradient: ", dpstar_dxstar.item(), (dpstar_dxstar * (4 * η0 * Ux_max) / (H ** 2)).item())
-    if epoch % 50 == 0:
-        visualize(epoch)
+    if epoch % visualize_step == 0:
+        visualize(epoch, L_visualize)
 
 # LBFGS closure function
 def closure():
     ϕ_PINN_optimizer_LBFGS.zero_grad()
-    ℒ, ℒ_un, ℒ_individuals = total_loss()
+    ℒ, ℒ_un, ℒ_individuals, ℒ_individuals_un, L_visualize = total_loss()
     ℒ.backward()
     return ℒ
 
 # LBFGS training loop 
 for epoch in range(EPOCHS_LBFGS):
     ϕ_PINN_optimizer_LBFGS.step(closure)
-    ℒ, ℒ_un, ℒ_individuals = total_loss()
-    loss_history.append(ℒ_un, ℒ_individuals)
+    ℒ, ℒ_un, ℒ_individuals, ℒ_individuals_un, L_visualize = total_loss()
+    loss_history.append(ℒ_un, ℒ_individuals, ℒ_individuals_un)
     ϕ_PINN_scheduler_LBFGS.step(ℒ_un.item()) if use_scheduler else None
 
     # Visuals
@@ -442,10 +500,11 @@ for epoch in range(EPOCHS_LBFGS):
     else:
         print(f"Epoch: {epoch} | Loss: {ℒ_un.item()} | Individual Losses: {[f'{l.item():.5f}' for l in ℒ_individuals]}")
     print("Normalized and non-normalized pressure gradient: ", dpstar_dxstar.item(), (dpstar_dxstar * (4 * η0 * Ux_max) / (H ** 2)).item())
-    if epoch % 10 == 0:
-        visualize(epoch)
+    if epoch % visualize_step == 0:
+        visualize(epoch, L_visualize)
 
 # Save ϕ model when finished
 ϕ_saved_path = save_path / ϕ_model_saved_name
 Path(save_path).mkdir(parents=True, exist_ok=True)
 torch.save(ϕ_PINN.state_dict(), ϕ_saved_path)
+if save_gif: animate_mp4()
