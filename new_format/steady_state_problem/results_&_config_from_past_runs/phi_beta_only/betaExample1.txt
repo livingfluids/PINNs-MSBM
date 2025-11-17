@@ -1,0 +1,105 @@
+import torch
+import torch.nn as nn
+import numpy as np
+import yaml
+
+# Paths relative to parent directory containing this config.py file
+data_path: str = 'data'
+models_path: str = 'models'
+visuals_path: str = 'saved_visuals'
+
+# Data for Ux & visualization of PINN vs. Data comparison
+data_file_directory = 'synthetic_data_example_1'
+# default options:
+'synthetic_data_example_1'
+'synthetic_data_example_2'
+'experimental_data_example_1'
+
+# Performance
+use_GPU: bool = False  # if True, uses GPU if available
+use_FDM: bool = False  # The finite difference method is used within the loss functions, not backpropagation
+
+# Scheduler 
+use_scheduler: bool = True  # reduces learning rate on plateau of validation loss
+scheduler_patience: int = 50  # number of epochs with no improvement after which learning rate will be reduced
+scheduler_factor: float = 0.7  # factor by which the learning rate will be reduced
+scheduler_min_learning_rate: float = 1e-6  # lower bound on the learning rate
+
+# Visuals 
+save_images: bool = True  # saves images during training into the visuals_path directory
+save_gif: bool = False  # saves a gif of the training process into the visuals_path directory
+visualize_step: int = 100  # frequency of images saved during training
+gif_name = 'PINN_gif.mp4'
+
+# Problem type
+# inverse_problem: bool = True  # if False, the forward problem is solved with known β, but no know velocity data
+# NOTE: not set up right now
+
+# PINN training methods
+two_PINNs: bool = True  # should u and ϕ be modeled by separate PINNs, or a single PINN?
+sequential_training: bool = True  # if two_PINNs = True, should each PINN be sequentially trained with u before ϕ, or trained simultaneously?
+train_u_PINN_only: bool = False  # only train the u PINN (useful for hyperparameter tuning of u PINN alone)
+save_u_PINN_model: bool = False # set to false if you want to play around without overriding a good model for u you ran earlier
+use_saved_u_PINN_model: bool = True  # if sequential_training = True, should a saved u PINN model be used instead of training from scratch?
+# NOTE: if train_u_PINN_only is True, then use_saved_u_PINN_model must be set to False 
+
+# I(·) PINN input transformations | set to '0' to omit a given transformation entirely 
+single_PINN_Fourier_scale: float = 1  # only for two_PINNs = False | scale for Fourier feature mapping 
+single_PINN_Gauss_scale: float = 1  # only for two_PINNs = False | scale for Gauss feature mapping
+
+u_PINN_Fourier_scale: float = 0  # only for two_PINNs = True | scale for Fourier feature mapping
+
+ϕ_PINN_Fourier_scale: float = 1  # only for two_PINNs = True | scale for Fourier feature mapping
+ϕ_PINN_Gauss_scale: float = 1  # only for two_PINNs = True | scale for Gauss feature mapping
+
+# M(·) Core PINN hyperparameters | separate configurations for single PINN, u PINN, and ϕ PINN cases
+collocation_points: int = 500
+wall_skewed_collocation: bool = False  # if True, more collocation points are placed near the walls via y = tanh(3 * x), where x is uniformly spaced in [-1, 1]
+
+single_PINN_activation_function = nn.Tanh()
+single_PINN_layers: int = 3
+single_PINN_neurons: int = 64
+single_PINN_epochs_ADAM: int = 1000
+single_PINN_epochs_LBFGS: int = 0
+single_PINN_learning_rate: float = 0.001
+single_PINN_λ_learning_rate: float = 0.000001
+
+u_PINN_activation_function = nn.Tanh()
+u_PINN_layers: int = 3
+u_PINN_neurons: int = 64
+u_PINN_epochs_ADAM: int = 1000
+u_PINN_epochs_LBFGS: int = 0
+u_PINN_learning_rate: float = 0.01
+u_PINN_λ_learning_rate: float = 0.000001
+
+ϕ_PINN_activation_function = nn.Tanh()
+ϕ_PINN_layers: int = 3
+ϕ_PINN_neurons: int = 64
+ϕ_PINN_epochs_ADAM: int = 2000
+ϕ_PINN_epochs_LBFGS: int = 0
+ϕ_PINN_learning_rate: float = 0.001
+ϕ_PINN_λ_learning_rate: float = 0.000001
+
+# Γ(·) PINN output transformations 
+u_zero_Dirichlet_at_walls: bool = True  # hard constrain u = 0 at walls
+ϕ_zero_Dirichlet_at_walls: bool = True  # hard constrain ϕ = 0 at walls
+
+# Lift force 
+β_learnable: bool = True  # if True, β is learned during training; if False, β is fixed to 'beta' from the parameters.yaml file
+β_initial_guess: float = 1
+β_learning_rate: float = 0.001
+
+# Spatially-adaptive learnable parameters
+use_spatially_adaptive_learnable_parameters: bool = True  
+λ_mask = lambda λ: λ**2  # the purpose of this function is to ensure λ positivity, so any function that does that can be tried: λ**2, λ**4, softplus(λ)
+initial_λ_J: float = 1
+initial_λ_Σxy: float = 1
+initial_λ_Σyy: float = 1
+initial_λ_mass: float = 1
+initial_λ_symmetry: float = 1
+initial_λ_data: float = 1
+
+# Loss Function handling
+sqrt_losses: bool = False # this sometimes helps, and othertimes hinders, so give it a shot (from Urbán et al)
+sqrt_data_loss: bool = True
+normalize_losses: bool = True  # if True, each loss term is normalized by its initial value at the start of training
