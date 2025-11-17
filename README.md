@@ -1,34 +1,26 @@
 # Learning hidden particle migration in concentrated particle suspension flow using Physics-Informed Neural Networks
 
-## Some Results
+This repository contains a unified Physics-Informed Neural Network (PINN) framework for learning particle migration in concentrated suspensions.
+It supports forward and inverse problems, synthetic and experimental data, single-PINN or two-PINN architectures, Fourier/Gauss mappings, and optional finite-difference PDE residuals.
 
-Particle volume fraction prediction (red) compared to OpenFOAM data (black dots) for the inverse problem with known velocity data via a SA-PINN with self-adaptive weights, a Gauss expansion layer, and the finite difference method used for calculating derivatives within the PDE loss:
-![SAPINN](assets/gauss_FDM_phi.png) 
+All functionality is driven by a single configuration file (config.py) and a single driver script (main.py).
 
-## Scripts
-	•	forward_FDM_Gauss_SA-PINN_phi_and_Ux.py - solves the forward problem for phi and Ux using a Gauss expansion layer and the FDM for calculating derivatives in the PDE loss
- 	•	forward_Fourier_SA-PINN_phi_and_Ux.py - solves the forward problem for phi and Ux using a Fourier expansion layer
-  	•	forward_Gauss_SA-PINN_phi_and_Ux.py - solves the forward problem for phi and Ux using a Gauss expansion layer
-  
-	•	inverse_FDM_Gauss_SA-PINN_phi_experimental.py - solves the inverse problem for phi for experimental data using a Gauss expansion layer and the FDM for calculating derivatives in the PDE loss
-	•	inverse_Fourier_SA-PINN_phi_experimental.py - solves the inverse problem for phi for experimental data using a Fourier expansion layer
- 	•	inverse_Gauss_SA-PINN_phi_experimental.py - solves the inverse problem for phi for experimental data using a Gauss expansion layer
-  	•	inverse_PINN_Ux_experimental.py - solves the inverse problem for Ux for experimental data
- 
-	•	inverse_FDM_Gauss_SA-PINN_phi_and_beta_synthetic.py - solves the inverse problem for phi and beta for synthetic data using a Gauss expansion layer and the FDM for calculating derivatives in the PDE loss
- 	•	inverse_FDM_Gauss_SA-PINN_phi_synthetic.py - solves the inverse problem for phi for synthetic data using a Gauss expansion layer and the FDM for calculating derivatives in the PDE loss
-  	•	inverse_Fourier_SA-PINN_phi_and_beta_synthetic.py - solves the inverse problem for phi and beta for synthetic data using a Fourier expansion layer
-   	•	inverse_Fourier_SA-PINN_phi_synthetic.py - solves the inverse problem for phi for synthetic data using a Fourier expansion layer
-	•	inverse_Gauss_SA-PINN_phi_and_beta_synthetic.py - solves the inverse problem for phi and beta for synthetic data using a Gauss expansion layer
-  	•	inverse_Gauss_SA-PINN_phi_synthetic.py - solves the inverse problem for phi for synthetic data using a Gauss expansion layer
-   	•	inverse_PINN_Ux_synthetic.py - solves the inverse problem for Ux for synthetic data
+## Overview
 
+This PINN framework predicts one, two, or all of the following:
+- The particle volume fraction ϕ(y)
+- The suspension velocity profile u(y)
+- The lift force coefficient β
 
-The scripts are formatted similarly, where any differences have to do with the problem itself and are mentioned above. 
+### Steady State Problem
+
+Inside `steady_state_problem/`:
+- PINN related configurations---dataset selection, forward vs inverse mode, mapping layers, PINN architecture, training procedure, saving, visualization, and loss-handling---are controlled from `config.py`.
+- All models are run from `main.py`, but you will never modify this file. 
 
 ## Methodology
 
-See [documentation.pdf](documentation.pdf) for a thorough review of the methodology in regards to PINN architecture and loss handling.
+See (link to paper)
 
 ## Environment Setup
 
@@ -113,118 +105,6 @@ conda install matplotlib "numpy<2" pandas
 ```bash
 conda install pytorch torchvision torchaudio cpuonly -c pytorch
 conda install matplotlib "numpy<2" pandas
-```
-
-## How to Run
-
-### Quick Start
-The scripts automatically detect and use the best available compute device:
-- **Apple Silicon Macs**: Uses MPS (Metal Performance Shaders) for GPU acceleration
-- **NVIDIA GPUs**: Uses CUDA for GPU acceleration  
-- **CPU fallback**: Automatically falls back to CPU if no GPU is available
-
-**Performance Note**: For some models/systems, CPU may actually be faster than GPU. All scripts include a `USE_GPU` flag to easily switch between GPU and CPU modes.
-
-### Forward Problems (Simultaneous Training)
-Run any of the forward problem scripts to train both Ux and ϕ simultaneously:
-
-```bash
-cd forward_problems
-python forward_FDM_Gauss_SA-PINN_phi_and_Ux.py        # Gauss expansion + FDM
-python forward_Fourier_SA-PINN_phi_and_Ux.py          # Fourier expansion
-python forward_Gauss_SA-PINN_phi_and_Ux.py            # Gauss expansion
-```
-
-### Inverse Problems (Sequential Training)
-
-#### For Synthetic Data:
-1. **Train a Ux model first:**
-   ```bash
-   cd inverse_problems_synthetic
-   python inverse_PINN_Ux_synthetic.py
-   ```
-
-2. **Then predict ϕ using your preferred method:**
-   ```bash
-   # Choose one of the following:
-   python inverse_FDM_Gauss_SA-PINN_phi_synthetic.py     # Gauss + FDM (recommended)
-   python inverse_Fourier_SA-PINN_phi_synthetic.py       # Fourier expansion
-   python inverse_Gauss_SA-PINN_phi_synthetic.py         # Gauss expansion
-   
-   # For joint parameter estimation:
-   python inverse_FDM_Gauss_SA-PINN_phi_and_beta_synthetic.py
-   python inverse_Fourier_SA-PINN_phi_and_beta_synthetic.py
-   python inverse_Gauss_SA-PINN_phi_and_beta_synthetic.py
-   ```
-
-#### For Experimental Data:
-1. **Train a Ux model first:**
-   ```bash
-   cd inverse_problems_experimental
-   python inverse_PINN_Ux_experimental.py
-   ```
-
-2. **Then predict ϕ using your preferred method:**
-   ```bash
-   # Choose one of the following:
-   python inverse_FDM_Gauss_SA-PINN_phi_experimental.py  # Gauss + FDM (recommended)
-   python inverse_Fourier_SA-PINN_phi_experimental.py    # Fourier expansion
-   python inverse_Gauss_SA-PINN_phi_experimental.py      # Gauss expansion
-   ```
-
-### Configuration Options
-Each script contains configurable parameters at the top:
-- `USE_GPU`: Set to `False` to force CPU usage (useful if CPU is faster for your system)
-- `data_file_1`: Choose between example datasets (True for example 1, False for example 2)
-- `save_images`: Enable to save training progress images for animation
-- `use_scheduler`: Enable learning rate scheduling
-- Network architecture parameters (neurons, layers, learning rates, epochs)
-
-**Device Selection Example:**
-```python
-USE_GPU = False  # Force CPU usage
-# or
-USE_GPU = True   # Use GPU if available (MPS on Mac, CUDA on NVIDIA)
-```
-
-### Output
-- Trained models are saved in `saved_models/` directories
-- Visualization images (if enabled) are saved in `saved_visuals/` directories
-- Training progress and loss values are printed to console
-
-## Troubleshooting
-
-### NumPy Compatibility Issues
-If you encounter errors like "A module that was compiled using NumPy 1.x cannot be run in NumPy 2.0.1", this is due to PyTorch being compiled against NumPy 1.x while NumPy 2.0+ is installed.
-
-**Solution:**
-```bash
-conda activate pinns  # or your environment name
-conda install pytorch torchvision torchaudio "numpy<2" matplotlib pandas -c pytorch
-```
-
-### Environment Activation
-Make sure you're in the correct conda environment before running scripts:
-```bash
-conda activate pinns  # or your environment name
-```
-
-### GPU vs CPU Performance
-- **Apple Silicon Macs**: PyTorch automatically uses MPS (Metal Performance Shaders) for GPU acceleration
-- **NVIDIA GPUs**: PyTorch uses CUDA if properly installed
-- **CPU performance**: For Physics-Informed Neural Networks with smaller architectures, CPU may actually be faster than GPU due to overhead
-
-**Benchmark your system**: Try both GPU and CPU modes to see which performs better:
-```python
-# In any script, change this line:
-USE_GPU = False  # Force CPU
-# vs
-USE_GPU = True   # Use GPU if available
-```
-
-Check GPU availability:
-```bash
-python -c "import torch; print('CUDA available:', torch.cuda.is_available()); print('MPS available:', torch.backends.mps.is_available() if hasattr(torch.backends, 'mps') else 'N/A')"
 ```
 
 ## References
