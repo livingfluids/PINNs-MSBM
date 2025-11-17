@@ -40,7 +40,7 @@ two_PINNs: bool = True  # should u and ϕ be modeled by separate PINNs, or a sin
 sequential_training: bool = True  # if two_PINNs = True, should each PINN be sequentially trained with u before ϕ, or trained simultaneously?
 train_u_PINN_only: bool = False  # only train the u PINN (useful for hyperparameter tuning of u PINN alone)
 save_u_PINN_model: bool = False # set to false if you want to play around without overriding a good model for u you ran earlier
-use_saved_u_PINN_model: bool = True  # if sequential_training = True, should a saved u PINN model be used instead of training from scratch?
+use_saved_u_PINN_model: bool = True  # if sequential_training = True, this uses a previously saved u model so that you can go straight to training ϕ
 # NOTE: if train_u_PINN_only is True, then use_saved_u_PINN_model must be set to False 
 
 # I(·) PINN input transformations | set to '0' to omit a given transformation entirely 
