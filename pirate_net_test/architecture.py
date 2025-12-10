@@ -88,8 +88,8 @@ class Trials:
 
 def generate_trials(params) -> Trials:
     # Trial functions
-    u_trial = lambda y: PINN(torch.cat([y], dim=1))[:,0:1] # * (1 + y) * (1 - y)  # torch.Size([y, 1])
-    ϕ_trial = lambda y: params.ϕ_max * torch.sigmoid(PINN(torch.cat([y], dim=1)))[:,1:2] # * (1 + y) * (1 - y)  # torch.Size([y, 1])
+    u_trial = lambda y: PINN(torch.cat([y], dim=1))[:,0:1] * (1 + y) * (1 - y)  # torch.Size([y, 1])
+    ϕ_trial = lambda y: params.ϕ_max * torch.sigmoid(PINN(torch.cat([y], dim=1)))[:,1:2] * (1 + y) * (1 - y)  # torch.Size([y, 1])
 
     return Trials(
         u_trial=u_trial,
