@@ -1,0 +1,18 @@
+
+# To-Do: dimensions of beta, frv
+
+# Physical parameters
+phi_bulk: 0.15  # bulk ϕ (dimensionless)
+phi_max: 0.5  # max ϕ (dimensionless)
+H: 0.00005  # channel height (m)
+rho: 1190.0  # solvent density (Kg/m³)
+eta: 0.48  # dynamic viscosity (Pa·s)
+Kn: 0.75  # fitting parameter (dimensionless)
+lambda2: 0.8  # fitting parameter (dimensionless)
+lambda3: 0.5  # fitting parameter (dimensionless)
+alpha: 4.0  # fitting parameter α ∈ [2, 5] (dimensionless)
+beta: 1.2  # power-law coefficient for lift force (dimensionless)
+a: 0.00000282  # particle radius (m)
+H0: 0.00000282  # prevents singularities within lift force at walls
+frv: 1.2  # function of the reduced volume
+p: 0.0965
