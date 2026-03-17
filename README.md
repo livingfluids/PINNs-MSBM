@@ -2,22 +2,27 @@
 
 ## Visuals
 
+### Steady-State (2D)
+![Transient model example](assets/bifurcation_example.png)
+
 ### Transient (1D×1D)
 ![Transient model example](assets/transient_example.png)
 
-### Steady-state (1D)
+### Steady-State (1D)
 ![Steady-state model example](assets/steady_state_example.png)
 
 Physics-informed neural networks (PINNs) for **suspension-balance / migration** modeling in channel flow, including:
 
 - **1D steady-state MSBM PINN** (`1D_steady_state/`)
 - **1D×1D transient PINN** (`1D_1D_transient/`)
+- **2D steady-state MSBM PINN** (`2D_steady_state/`)
 
 The models learn velocity and concentration fields:
-- **Steady:** `u(y)`, `phi(y)`
+- **Steady 1D:** `u(y)`, `phi(y)`
 - **Transient:** `u(y, t)`, `phi(y, t)`
+- **Steady 2D:** `u(y, x)`, `v(y, x)`, `phi(y, x), p(y, x)`
 
-Both implementations use:
+Each model uses:
 - **Fourier-feature coordinate embeddings** (`architecture.py`)
 - **Coupled physics residuals** (migration + momentum) (`loss.py`)
 - **Wall/bulk/symmetry constraints**
@@ -59,6 +64,25 @@ Both implementations use:
 │   ├── soap.py                # SOAP optimizer implementation
 │   └── data/
 │       └── transientdata/
+│           ├── *.csv
+│           └── parameters.yaml
+│
+├── 2D_steady_state/
+│   ├── main.py                # entry point
+│   ├── config.py              # hyperparameters and run options
+│   ├── architecture.py        # PINN + trial functions
+│   ├── params.py              # data loading + nondimensionalization
+│   ├── loss.py                # physics/data residuals + adaptive weighting
+│   ├── loss_scheme.py         # loss weighting scheme
+│   ├── training.py            # training loop
+│   ├── plot.py                # visualization outputs
+│   ├── geometry.py            # geometry utilities + masks
+│   ├── visualize.py           # extra visualization helpers
+│   ├── soap.py                # SOAP optimizer implementation
+│   ├── paths.py               # path helpers
+│   ├── loss_old.py            # legacy loss
+│   └── data/
+│       └── fakedata1/
 │           ├── *.csv
 │           └── parameters.yaml
 │
