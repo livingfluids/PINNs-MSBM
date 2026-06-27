@@ -13,52 +13,71 @@ class FourierFeatures(nn.Module):
     def forward(self, x):
         proj = x @ self.B
         return torch.cat([torch.sin(proj), torch.cos(proj)], dim=-1)
+    
+class MultiScaleFourierFeatures(nn.Module):
+    def __init__(self, in_dim, neurons, scales):
+        super().__init__()
+        self.blocks = nn.ModuleList([
+            FourierFeatures(in_dim, neurons, scale) for scale in scales
+        ])
+
+    def forward(self, x):
+        return torch.cat([block(x) for block in self.blocks], dim=-1)
 
 # Simple PINN Architecture
 def buildSimplePINN(neurons):
     return nn.Sequential(
 
         # 1 Fourier Input Layer
-        FourierFeatures(in_dim=2, neurons=neurons, scale=config.SCALE),
+        MultiScaleFourierFeatures(in_dim=2, neurons=neurons, scales=config.SCALES),
 
-        # 5 Hidden Layers
-        nn.Linear(neurons * 2, neurons),
+        # 3 Hidden Layers
+        nn.Linear(neurons * 2 * len(config.SCALES), neurons),
         config.ACTIVATION,
-        # - 
-        nn.Linear(neurons, neurons),
-        config.ACTIVATION,
-        # - 
-        nn.Linear(neurons, neurons),
-        config.ACTIVATION,
-        # - 
-        nn.Linear(neurons, neurons),
-        config.ACTIVATION,
-        # - 
+
         nn.Linear(neurons, neurons),
         config.ACTIVATION,
 
+        nn.Linear(neurons, neurons),
+        config.ACTIVATION,
+        
         # 1 Linear Output Layer
-        nn.Linear(neurons, 4),  # u, v, p, phi_raw
+        nn.Linear(neurons, 4),  # u, v, p, ϕ
     )
 
 # Trial Function Data Class
 @dataclass
-class Trials:
-    u_trial: Callable[[torch.Tensor], torch.Tensor]
-    v_trial: Callable[[torch.Tensor], torch.Tensor]
-    p_trial: Callable[[torch.Tensor], torch.Tensor]
-    ϕ_trial: Callable[[torch.Tensor], torch.Tensor]
-    # uvpϕ_trial: Callable[[torch.Tensor], Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]]
+class Trials: all_trials: Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
+
+"""# Build Trial Functions
+def buildTrials(params, device, PINN) -> Trials:
+    def all_trials(xy: torch.Tensor):
+        # Streamfunction trials require coordinate gradients even in plotting
+        # and diagnostics that call this function under torch.no_grad().
+        with torch.enable_grad():
+            if not xy.requires_grad: xy = xy.detach().requires_grad_(True)
+            # - 
+            pinn    = PINN(xy)
+            ψ       = pinn[:, 0:1]  # unconstrained streamfunction
+            p       = pinn[:, 1:2]
+            ϕ       = params.ϕ_max * torch.sigmoid(pinn[:, 2:3])
+            # - 
+            dψ = torch.autograd.grad(ψ.sum(), xy, create_graph=True, retain_graph=True)[0]
+            u =  dψ[:, 1:2]   # ∂ψ/∂y
+            v = -dψ[:, 0:1]   # -∂ψ/∂x
+            # - 
+        return u, v, p, ϕ
+    return Trials(all_trials=all_trials)"""
 
 # Build Trial Functions
 def buildTrials(params, device, PINN) -> Trials:
-    u_trial = lambda xy: torch.sigmoid(PINN(xy)[:, 0:1]) * 2 - 1
-    v_trial = lambda xy: torch.sigmoid(PINN(xy)[:, 1:2]) * 2 - 1
-    p_trial = lambda xy: PINN(xy)[:, 2:3]
-    ϕ_trial = lambda xy: params.ϕ_max * torch.sigmoid(PINN(xy)[:, 3:4])
-    # - 
-    return Trials(
-        u_trial=u_trial, 
-        v_trial=v_trial, 
-        p_trial=p_trial, 
-        ϕ_trial=ϕ_trial)
+    def all_trials(xy: torch.Tensor):
+        pinn    = PINN(xy)
+        # - 
+        u       = pinn[:, 0:1]
+        v       = pinn[:, 1:2]
+        p       = pinn[:, 2:3]
+        ϕ       = pinn[:, 3:4]
+        # - 
+        return u, v, p, ϕ
+    return Trials(all_trials=all_trials)

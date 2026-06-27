@@ -47,11 +47,11 @@ class SOAP(optim.Optimizer):
     def __init__(
         self,
         params,
-        lr: float = 3e-3,
+        lr: float = 3e-3,  # 3e-3
         betas=(0.95, 0.95),
         shampoo_beta: float= -1,
         eps: float = 1e-8,
-        weight_decay: float = 0.001,          # increased from 0.01
+        weight_decay: float = 0.01,          # increased from 0.01
         precondition_frequency: int=10,     # increased from 10
         max_precond_dim: int=10000, # 
         merge_dims: bool = False, # Merge dimensions till the product of the dimensions is less than or equal to max_precond_dim.

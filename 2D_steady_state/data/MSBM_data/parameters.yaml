@@ -1,0 +1,30 @@
+
+# Physical parameters
+phi_bulk: 0.2  # bulk ϕ (dimensionless)
+phi_max: 0.75  # max ϕ / OpenFOAM cm (dimensionless)
+R1: 0.000025  # top branch radius (m)
+R2: 0.000025  # bottom branch radius (m)
+len_parent: 0.0001  # parent branch length (m)
+len_branch: 0.0001  # both branch lengths (m) (min: 0.007)
+rho: 1000.0  # solvent density (Kg/m³)
+eta: 0.0013  # dynamic viscosity (Pa·s)
+Kn: 0.75  # fitting parameter (dimensionless)
+lambda2: 0.8  # fitting parameter (dimensionless)
+lambda3: 0.5  # fitting parameter (dimensionless)
+alpha: 4.0  # fitting parameter α ∈ [2, 5] (dimensionless)
+beta: 1.2
+a: 0.00000282  # particle radius (m)
+H0: 0.000000000001  # prevents singularities within lift force at walls
+frv: 1.2  # function of the reduced volume
+p_max: 0.0965  # max pressure 
+dp_dx_inlet: -202296.23  # inlet pressure gradient (not used currently)
+r: 0.5  # flow partition ratio (dimensionless)
+daughter_profile_start: 0.0000536  # distance along daughter centerline from daughter_profile_start_reference (m)
+daughter_profile_start_reference: v_corner  # v_corner means centerline station aligned with the inner V-corner
+daughter_profile_skewed: false  # true: wall-intersection chord; false: perpendicular to daughter centerline
+daughter_profile_source: geometry  # geometry or csv_points
+openfoam_x_origin: 0.0049  # only used when daughter_profile_source is csv_points
+epsilon: 2833
+
+# 0.000000000001
+# 0.0000536
