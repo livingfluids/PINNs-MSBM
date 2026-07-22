@@ -3,7 +3,7 @@
 ## Visuals
 
 ### Steady-State (2D)
-![Bifurcation model example 1](assets/bifurcation.png)
+![Bifurcation model example 1](assets/20_000skew0_9.png)
 
 ![Bifurcation model example 2](assets/bifurcation_sbm.png)
 
