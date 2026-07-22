@@ -91,14 +91,14 @@ def plotResults(epoch, trials, params, history, grad_threshold=0.2, grad_points=
         ax2.grid()
 
         # Beta
-        if config.CASE == 'learn cfl':
+        if config.CASE == 'learn_cfl':
             if history.MSEs:
                 ax3.semilogy(history.MSEs, 'g-', label=f'ϕ MSE = {ϕMSE(trials, params).item():.4f}')
                 ax3.set_xlabel('Epoch')
                 ax3.set_ylabel('ϕ MSE')
                 ax3.legend()
                 ax3.grid(True)
-        elif config.CASE == 'learn beta':
+        elif config.CASE == 'learn_beta':
             if history.βs:
                 ax3.semilogy(history.βs, 'g-', label=f'β = {params.β.item():.4f}')
                 if params.β_true is not None: ax3.axhline(params.β_true.item(), color='r', linestyle='--', label=f'True β = {params.β_true.item():.4f}')

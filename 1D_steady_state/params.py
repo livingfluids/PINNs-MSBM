@@ -93,7 +93,7 @@ def buildParams(device) -> Params:
 
     # Tensors from CSV
     y_data_     = 2.0 * torch.tensor(df['y'].values, dtype=dtype, device=device).unsqueeze(1) / H - 1.0
-    y_coll_     = torch.linspace(-1.0, 1.0, config.COLL, device=device).unsqueeze(1).requires_grad_(True)
+    y_coll_     = torch.linspace(-1.0, 1.0, config.COLL + 2, device=device)[1:-1].unsqueeze(1).requires_grad_(True)
     u_data_     = torch.tensor(df['u'].values, dtype=dtype, device=device).unsqueeze(1) / u_max
     ϕ_data_     = torch.tensor(df['phi'].values, dtype=dtype, device=device).unsqueeze(1)
 
@@ -115,8 +115,8 @@ def buildParams(device) -> Params:
     Λ_data      = nn.Parameter(torch.ones([1], device=device, dtype=dtype, requires_grad=True))
 
     # Beta Handling 
-    if config.CASE == 'learn beta': β = nn.Parameter(torch.tensor([1.0], device=device, dtype=dtype, requires_grad=True))
-    elif config.CASE == 'learn cfl': β = β_true
+    if config.CASE == 'learn_beta': β = nn.Parameter(torch.tensor([1.0], device=device, dtype=dtype, requires_grad=True))
+    elif config.CASE == 'learn_cfl': β = β_true
 
     return Params(
             u_max=u_max,

@@ -1,4 +1,5 @@
 import torch.nn as nn
+import torch
 import loss_schemes
 
 # NOTE: Problem Types
@@ -6,28 +7,29 @@ import loss_schemes
 # Forward Problem:      set Λ_data = 0
 
 # Processor
-USE_GPU                 = False  # uses mps or cuda if available, fallback to cpu 
+USE_GPU                 = True  # uses mps or cuda if available, fallback to cpu 
 
 # Data Directory
-DATA_DIR                = 'synthetic_data_example_1'  # directory for the problem case's data 
+DATA_DIR                = 'synthetic_data_example_3'  # directory for the problem case's data 
 
 # Problem Case
-CASE                    = 'learn cfl'  # 'learn cfl' or 'learn beta'
+CASE                    = 'learn_beta'  # 'learn_cfl' or 'learn_beta'
+PROBLEM                 = 'inverse'  # 'inverse' or 'forward'
 
 # Visualization
-VISUALIZE_STEPS         = 100
+VISUALIZE_STEPS         = 200
 SAVE_STEPS              = 500
 
 # PINN Hyperparameters
-EPOCHS: int             = 10000  # total epochs
-NEURONS: int            = 64  # neurons 
+EPOCHS: int             = 6002  # total epochs
+NEURONS: int            = 128  # neurons 
 BLOCKS: int             = 1  # PirateNet blocks (Wang et al.)
-SCALE: float            = 10.0  # Fourier scale 
+SCALE: float            = 1.0  # Fourier scale 
 α_INIT: float           = 0.0  # learnable parameter | 0.0 for identity mapping, 1.0 for fully nonlinear mapping | 0.0 recommended (Wang et al.)
 PINN_LR_INIT: float     = 1e-3  # PINN learning rate
 COLL: int               = 500  # collocation points
 ACTIVATION              = nn.Tanh()  # PINN activation function
-GRAD_NORM_EPOCH_INTERVAL= 100
+GRAD_NORM_EPOCH_INTERVAL= 1000 # 200
 
 # Scheduler Hyperparameters
 PATIENCE: int           = 25  # number of epochs with no improvement after which PINN learning rate will be reduced
@@ -37,11 +39,13 @@ MIN_LR: float           = 1e-3  # lower bound on the PINN learning rate
 # Loss Hyperparameters
 λ_MASK                  = lambda λ: λ**2  # mask function for spatially self-sdaptive weights (McClenny & Braga-Neto)
 λ_INIT                  = 1 # initial value spatially self-sdaptive weights
-λ_LR_INIT: float        = 1  # spatially self-sdaptive weights learning rate (McClenny & Braga-Neto)
+λ_LR_INIT: float        = 1e-1  # spatially self-sdaptive weights learning rate (McClenny & Braga-Neto)
+SA_EPOCH = 200
 Λ_PDEs: float           = 1  # PDEs global weight
 Λ_BCs: float            = 1  # BCs global weight
 Λ_data: float           = 1  # data global weight
 ξ: float                = 0.9 # moving average factor for global weighting updates | only for loss gradient normalization scheme
+ADAPTIVE_WEIGHT_MAX     = 1e8
 
 # Ray[Tune] Hyperparameter Space
 REPORT_EVERY: int       = 150  # reports metric to Ray[Tune] every this many epochs
