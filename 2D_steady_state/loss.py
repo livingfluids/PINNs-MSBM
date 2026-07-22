@@ -21,6 +21,26 @@ import geometry
 Λ_bulk_old           = 1.0
 EPS                  = 1e-12
 
+# Snapshot Of Adaptive Loss Weights (For Logging/Diagnostics)
+def currentLossWeights():
+    return {
+        "migration": Λ_migration_old,
+        "x_momentum": Λ_x_momentum_old,
+        "y_momentum": Λ_y_momentum_old,
+        "continuity": Λ_continuity_old,
+        "no_slip": Λ_no_slip_old,
+        "v_corner": Λ_v_corner_old,
+        "u_data": Λ_u_data_old,
+        "v_data": Λ_v_data_old,
+        "ϕ_data": Λ_ϕ_data_old,
+        "partition_ratio": Λ_partition_ratio_old,
+        "flow_flux": Λ_flow_flux_old,
+        "particle_flux": Λ_particle_flux_old,
+        "normal_particle_flux_wall": Λ_normal_particle_flux_wall_old,
+        "ϕ_neumann": Λ_ϕ_neumann_old,
+        "bulk": Λ_bulk_old,
+    }
+
 def lineIntersection(first, second, dtype):
     p = first["x0"]
     r = first["x1"] - first["x0"]
@@ -103,11 +123,11 @@ def PDELoss(trials, params, array, device):
     L__         = L * (params.S**2) / (params.η0 * params.u_max)  # nondimensionalize after calculating it
     L_          = torch.stack([L__[:, 0:1], L__[:, 1:2], torch.zeros_like(L__[:, 0:1])], dim=1)  # [Nfull, 3, 1]
     
-    v_corner = innerBifurcationVCorner(params=params, device=device, dtype=xy.dtype)
-    dist_to_corner = torch.sqrt(((xy - v_corner.unsqueeze(0))**2).sum(dim=1, keepdim=True))  # physical coords vs physical v_corner
-    corner_radius = params.R0 * 0.1
-    corner_mask = (dist_to_corner > corner_radius).float()  # [Nfull, 1]
-    L_ = L_ * corner_mask.unsqueeze(1)  # [Nfull, 1, 1] broadcasts with [Nfull, 3, 1]
+    # v_corner = innerBifurcationVCorner(params=params, device=device, dtype=xy.dtype)
+    # dist_to_corner = torch.sqrt(((xy - v_corner.unsqueeze(0))**2).sum(dim=1, keepdim=True))  # physical coords vs physical v_corner
+    # corner_radius = params.R0 * 0.1
+    # corner_mask = (dist_to_corner > corner_radius).float()  # [Nfull, 1]
+    # L_ = L_ * corner_mask.unsqueeze(1)  # [Nfull, 1, 1] broadcasts with [Nfull, 3, 1]
 
     L_plot = (2 * A**2 / 9) * f(ϕ_).unsqueeze(1) * ϕ_.view(-1, 1, 1) * L_
 
@@ -123,8 +143,8 @@ def PDELoss(trials, params, array, device):
     γ̇NL_ = params.ε * params.S * Umx_
 
     # Particle Normal Stress Diagonal Tensor (Σₙₙᵖ)
-    Σpnn_ = ηN(ϕ_).view(-1, 1, 1) * (γ̇_.unsqueeze(1) + γ̇NL_.view(-1, 1, 1)) * Q  # torch.Size([y, 3, 3]), a matrix for each y
-    # Σpnn_ = ηN(ϕ_).view(-1, 1, 1) * (γ̇_.unsqueeze(1)) * Q  # torch.Size([y, 3, 3]), a matrix for each y
+    # Σpnn_ = ηN(ϕ_).view(-1, 1, 1) * (γ̇_.unsqueeze(1) + γ̇NL_.view(-1, 1, 1)) * Q  # torch.Size([y, 3, 3]), a matrix for each y
+    Σpnn_ = ηN(ϕ_).view(-1, 1, 1) * (γ̇_.unsqueeze(1)) * Q  # torch.Size([y, 3, 3]), a matrix for each y
 
     # Oriented Particle Stress Tensor (Σᵖ)
     Σp_ = -Σpnn_ + (2 * ηp(ϕ_).view(-1, 1, 1) * E_)  # torch.Size([y, 3, 3]), a matrix for each y
@@ -200,14 +220,18 @@ def noSlipBCLoss(trials, params, array, device):
     wall_names      = [name for name in walls.keys() if ("plus" in name or "minus" in name)]
     segment_names   = array["segment_names"]
     full_segment_id = array["full_segment_id"]
-    wall_mask       = torch.zeros_like(full_segment_id, dtype=torch.bool, device=full_segment_id.device)
+    segment_losses  = []
     for wall_name in wall_names:
         if wall_name in segment_names:
-            wall_mask |= full_segment_id == segment_names.index(wall_name)
+            wall_mask = full_segment_id == segment_names.index(wall_name)
+            if torch.any(wall_mask):
+                wall_velocity = torch.cat([u_[wall_mask], v_[wall_mask]], dim=1)
+                segment_losses.append(torch.mean(wall_velocity**2))
     # -
-    wall_loss_term  = torch.cat([u_[wall_mask], v_[wall_mask]], dim=1)
+    if len(segment_losses) == 0:
+        return (u_.sum() + v_.sum()).reshape(1) * 0.0
     # - 
-    return wall_loss_term
+    return torch.stack(segment_losses)
 
 # Wall Volume-Fraction Neumann BC | ∂ϕ/∂n = 0, For Side Walls
 def phiWallNeumannLoss(trials, params, array, device):
@@ -391,7 +415,7 @@ def totalLoss(trials, params, PINN, array, epoch, device):
     ℒ_continuity_raw= torch.mean(continuity**2)
     ℒ_normal_particle_flux_wall_raw = torch.mean(normal_particle_flux_wall**2)
     ℒ_ϕ_neumann_raw = torch.mean(ϕ_neumann_wall**2)
-    ℒ_no_slip_raw   = torch.mean(no_slip**2)
+    ℒ_no_slip_raw   = torch.mean(no_slip)
     ℒ_v_corner_raw  = torch.mean(v_corner_no_slip**2)
     ℒ_u_data_raw    = torch.mean(u_data**2)
     ℒ_v_data_raw    = torch.mean(v_data**2)
@@ -468,24 +492,27 @@ def totalLoss(trials, params, PINN, array, epoch, device):
     ℒ_u_data           = (ℒ_u_data_raw * config.Λ_data) * Λ_u_data_old
     ℒ_v_data           = (ℒ_v_data_raw * config.Λ_data) * Λ_v_data_old
     ℒ_ϕ_data           = (ℒ_ϕ_data_raw * config.Λ_data) * Λ_ϕ_data_old
-    ℒ_flow_flux        = (ℒ_flow_flux_raw * config.Λ_BCs) * Λ_flow_flux_old
-    ℒ_particle_flux    = (ℒ_particle_flux_raw * config.Λ_BCs) * Λ_particle_flux_old
+    ℒ_flow_flux        = (ℒ_flow_flux_raw * config.Λ_BCs) * 100 # Λ_flow_flux_old
+    ℒ_particle_flux    = (ℒ_particle_flux_raw * config.Λ_BCs) * 100 # Λ_particle_flux_old
     ℒ_partition_ratio  = (ℒ_partition_ratio_raw * config.Λ_BCs) * Λ_partition_ratio_old
     ℒ_bulk             = (ℒ_bulk_raw * config.Λ_PDEs) * Λ_bulk_old
     # - 
-    total_loss = (ℒ_migration +
-                    ℒ_x_momentum +
-                    ℒ_y_momentum +
-                    ℒ_continuity +
-                    ℒ_no_slip +
-                    ℒ_u_data +
-                    ℒ_v_data +
-                    ℒ_ϕ_data +
-                    ℒ_flow_flux +
-                    ℒ_particle_flux +
-                    ℒ_partition_ratio +
-                    ℒ_normal_particle_flux_wall +
-                    ℒ_ϕ_neumann)
+    total_loss = (
+        ℒ_migration +
+        ℒ_x_momentum +
+        ℒ_y_momentum +
+        ℒ_continuity +
+        ℒ_no_slip +
+        ℒ_v_corner + 
+        ℒ_u_data +
+        ℒ_v_data +
+        ℒ_ϕ_data +
+        ℒ_flow_flux +
+        ℒ_particle_flux +
+        ℒ_partition_ratio
+        #ℒ_normal_particle_flux_wall
+        # ℒ_ϕ_neumann
+        )
     # - 
     return total_loss, lift_force
 

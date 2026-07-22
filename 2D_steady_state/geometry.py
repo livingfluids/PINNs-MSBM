@@ -306,6 +306,55 @@ def keepExteriorWallPoints(wall, params, eps):
     }
     return out
 
+def addInnerVCornerWallPoint(wall, params, segment_name="top_minus"):
+    names = wall["segment_names"]
+    if segment_name not in names:
+        raise ValueError(f"Could not attach V-corner wall point to missing segment '{segment_name}'.")
+
+    points = wall["points"]
+    dtype = points.dtype
+    device = points.device
+    v_corner = innerBifurcationVCorner(params=params, device=device, dtype=dtype)
+    rmax = torch.stack([params.R0, params.R1, params.R2]).to(device=device, dtype=dtype).max()
+    duplicate_tol = torch.clamp(10.0 * torch.finfo(dtype).eps * rmax, min=torch.finfo(dtype).eps)
+    already_present = torch.any(torch.linalg.norm(points - v_corner.unsqueeze(0), dim=1) <= duplicate_tol)
+    if bool(already_present):
+        return wall
+
+    segment_id = names.index(segment_name)
+    normal = wall["normals_by_segment"][segment_name][0]
+
+    points = torch.cat([points, v_corner.unsqueeze(0)], dim=0)
+    normals = torch.cat([wall["normals"], normal.unsqueeze(0)], dim=0)
+    segment_ids = torch.cat(
+        [
+            wall["segment_id"],
+            torch.tensor([segment_id], device=device, dtype=torch.long),
+        ],
+        dim=0,
+    )
+
+    points_by_segment = dict(wall["points_by_segment"])
+    normals_by_segment = dict(wall["normals_by_segment"])
+    points_by_segment[segment_name] = torch.cat(
+        [points_by_segment[segment_name], v_corner.unsqueeze(0)],
+        dim=0,
+    )
+    normals_by_segment[segment_name] = torch.cat(
+        [normals_by_segment[segment_name], normal.unsqueeze(0)],
+        dim=0,
+    )
+
+    out = dict(wall)
+    out.update({
+        "points_by_segment": points_by_segment,
+        "normals_by_segment": normals_by_segment,
+        "points": points,
+        "normals": normals,
+        "segment_id": segment_ids,
+    })
+    return out
+
 # Extract Wall Segments
 def exteriorWallSegments(segments, params, eps, n_samples=1000, side_walls_only=False):
     if side_walls_only: names = [name for name in segments.keys() if ("plus" in name or "minus" in name)]
@@ -389,28 +438,57 @@ def distanceToNearestBoundaryPoints(points, boundary_points, eps=1e-12):
 
     return dist_min, idx_min, unit_dir_min
 
-# Point --> Segment Distance 
-def pointToSegmentDistance(points, x0, x1, eps=1e-12):
-    seg = x1 - x0
+# Geometry Compute Dtype/Device (config.WALL_DISTANCE_DTYPE; MPS has no float64 support,
+# so fall back to CPU when float64 is requested there)
+def _geometryComputeDtypeAndDevice(device):
+    compute_dtype = getattr(config, "WALL_DISTANCE_DTYPE", torch.float64)
+    if compute_dtype == torch.float64 and device.type == "mps":
+        return compute_dtype, torch.device("cpu")
+    return compute_dtype, device
+
+# Point --> Segment Distance
+def pointToSegmentDistance(points, x0, x1, eps=1e-24):
+    # Precision is set by config.WALL_DISTANCE_DTYPE: at these coordinate magnitudes
+    # (~1e-4 m), float32's own rounding error (~1e-11 m) swamps an eps this small,
+    # turning the near-wall floor into noise instead of a controlled regularizer.
+    orig_dtype, orig_device = points.dtype, points.device
+    compute_dtype, compute_device = _geometryComputeDtypeAndDevice(orig_device)
+    points_c = points.to(device=compute_device, dtype=compute_dtype)
+    x0_c = x0.to(device=compute_device, dtype=compute_dtype)
+    x1_c = x1.to(device=compute_device, dtype=compute_dtype)
+    # -
+    seg = x1_c - x0_c
     seg_len_sq = torch.sum(seg * seg).clamp_min(eps)
-    t = ((points - x0) @ seg) / seg_len_sq
+    t = ((points_c - x0_c) @ seg) / seg_len_sq
     t = torch.clamp(t, 0.0, 1.0).unsqueeze(1)
-    closest = x0.unsqueeze(0) + t * seg.unsqueeze(0)
-    delta = closest - points
+    closest = x0_c.unsqueeze(0) + t * seg.unsqueeze(0)
+    delta = closest - points_c
     dist = torch.sqrt(torch.sum(delta * delta, dim=1, keepdim=True) + eps)  # check eps = 0.0
     unit_to_segment = delta / (dist + eps)
-    return dist, closest, unit_to_segment
+    return (
+        dist.to(device=orig_device, dtype=orig_dtype),
+        closest.to(device=orig_device, dtype=orig_dtype),
+        unit_to_segment.to(device=orig_device, dtype=orig_dtype),
+    )
 
 # Point --> Segment Normal Projection
-def pointToSegmentNormalProjection(points, x0, x1, normal, eps=1e-12):
-    seg = x1 - x0
+def pointToSegmentNormalProjection(points, x0, x1, normal, eps=1e-24):
+    # Precision is set by config.WALL_DISTANCE_DTYPE; see pointToSegmentDistance for why.
+    orig_dtype, orig_device = points.dtype, points.device
+    compute_dtype, compute_device = _geometryComputeDtypeAndDevice(orig_device)
+    points_c = points.to(device=compute_device, dtype=compute_dtype)
+    x0_c = x0.to(device=compute_device, dtype=compute_dtype)
+    x1_c = x1.to(device=compute_device, dtype=compute_dtype)
+    normal_c = normal.to(device=compute_device, dtype=compute_dtype)
+    # -
+    seg = x1_c - x0_c
     seg_len_sq = torch.sum(seg * seg).clamp_min(eps)
-    normal = normal / torch.linalg.norm(normal).clamp_min(eps)
-    rel = points - x0
+    normal_c = normal_c / torch.linalg.norm(normal_c).clamp_min(eps)
+    rel = points_c - x0_c
 
     t = (rel @ seg) / seg_len_sq
     within_projection = (t >= 0.0) & (t <= 1.0)
-    signed_normal_dist = (rel @ normal).unsqueeze(1)
+    signed_normal_dist = (rel @ normal_c).unsqueeze(1)
     dist = torch.sqrt(signed_normal_dist * signed_normal_dist + eps)  # check eps = 0.0
 
     normal_sign = torch.where(
@@ -418,8 +496,13 @@ def pointToSegmentNormalProjection(points, x0, x1, normal, eps=1e-12):
         torch.ones_like(signed_normal_dist),
         -torch.ones_like(signed_normal_dist),
     )
-    unit_to_wall = normal_sign * normal.unsqueeze(0)
-    return dist, t, within_projection, unit_to_wall
+    unit_to_wall = normal_sign * normal_c.unsqueeze(0)
+    return (
+        dist.to(device=orig_device, dtype=orig_dtype),
+        t.to(device=orig_device, dtype=orig_dtype),
+        within_projection.to(device=orig_device),
+        unit_to_wall.to(device=orig_device, dtype=orig_dtype),
+    )
 
 # Distance Field
 def distanceToNearestSegment(points, segments, include_caps=False):
@@ -523,6 +606,7 @@ def buildBifurcationArray(params, device, n_boundary_per_segment=config.N_PTS_BD
     walls = bifurcationWalls(params=params, device=device, dtype=interior_array.dtype)
     bifurcation_boundary = buildWallsArray(segments=walls, n_per_segment=n_boundary_per_segment)
     bifurcation_boundary = keepExteriorWallPoints(wall=bifurcation_boundary, params=params, eps=boundary_eps)
+    bifurcation_boundary = addInnerVCornerWallPoint(wall=bifurcation_boundary, params=params)
     boundary_array = bifurcation_boundary["points"]
     # - 
     full_array = torch.cat([interior_array, boundary_array], dim=0)

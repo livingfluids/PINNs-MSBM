@@ -3,7 +3,7 @@ import config
 from adaptive_refinement import residualBasedAdaptiveRefinement
 from soap import SOAP
 from plot import History, plotResults
-from loss import particlePartitionRatio, totalLoss
+from loss import particlePartitionRatio, totalLoss, currentLossWeights
 from mse import daughterProfileMSE, parentProfileMSE, profileFieldTitle, profileVisualizationField
 
 # Train Model
@@ -44,6 +44,11 @@ def trainModel(trials, params, PINN, array, device):
         if (epoch % config.PLOT_EVERY == 0 or epoch == 1 or epoch == config.EPOCHS): plotResults(epoch=epoch, trials=trials, params=params, array=array, history=history, lift_force=L_)
         top, bottom = particlePartitionRatio(trials=trials, params=params, array=array, device=device)
         print(f'Epoch: {epoch}  Top Outlet ηᵖQ: {top:.3e}  Bottom Outlet ηᵖQ: {bottom:.3e}  Daughter {profile_title} MSE: {profile_MSE_value:.3e}  Parent {profile_title} MSE: {parent_profile_MSE_value:.3e}')
+
+        # Loss-Weight Diagnostics (recomputed every GRAD_NORM_EPOCH_INTERVAL epochs)
+        if epoch % config.GRAD_NORM_EPOCH_INTERVAL == 0 or epoch == 1:
+            weights_str = "  ".join(f"Λ_{name}={value:.3e}" for name, value in currentLossWeights().items())
+            print(f'Epoch: {epoch}  Loss Weights:  {weights_str}')
 
         # 4. Residual-Based Adaptive Refinement
         array, rar_stats = residualBasedAdaptiveRefinement(

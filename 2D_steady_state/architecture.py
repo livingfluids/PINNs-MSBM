@@ -8,8 +8,9 @@ import config
 class FourierFeatures(nn.Module):
     def __init__(self, in_dim, neurons, scale):
         super().__init__()
+        #self.register_buffer("B", torch.randn(in_dim, neurons) * scale)
         self.B = nn.Parameter(torch.randn(in_dim, neurons) * scale)
-
+        
     def forward(self, x):
         proj = x @ self.B
         return torch.cat([torch.sin(proj), torch.cos(proj)], dim=-1)
@@ -49,8 +50,8 @@ def buildSimplePINN(neurons):
 @dataclass
 class Trials: all_trials: Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
 
-"""# Build Trial Functions
-def buildTrials(params, device, PINN) -> Trials:
+# Build Trial Functions
+"""def buildTrials(params, device, PINN) -> Trials:
     def all_trials(xy: torch.Tensor):
         # Streamfunction trials require coordinate gradients even in plotting
         # and diagnostics that call this function under torch.no_grad().
@@ -77,7 +78,7 @@ def buildTrials(params, device, PINN) -> Trials:
         u       = pinn[:, 0:1]
         v       = pinn[:, 1:2]
         p       = pinn[:, 2:3]
-        ϕ       = pinn[:, 3:4]
+        ϕ       = params.ϕ_max * torch.sigmoid(pinn[:, 3:4])
         # - 
         return u, v, p, ϕ
     return Trials(all_trials=all_trials)
