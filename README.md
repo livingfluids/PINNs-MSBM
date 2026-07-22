@@ -3,13 +3,16 @@
 ## Visuals
 
 ### Steady-State (2D)
-![Transient model example](assets/bifurcation_example.png)
+![Bifurcation model example 1](assets/bifurcation.png)
+
+![Bifurcation model example 2](assets/bifurcation_sbm.png)
 
 ### Transient (1D×1D)
-![Transient model example](assets/transient_example.png)
+![Transient model example](assets/transient.png)
 
 ### Steady-State (1D)
-![Steady-state model example](assets/steady_state_example.png)
+![Steady-state model example](assets/plot_epoch_5000.png)
+
 
 Physics-informed neural networks (PINNs) for **suspension-balance / migration** modeling in channel flow, including:
 
